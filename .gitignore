@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2022 Ethel Morgan
+#
+# SPDX-License-Identifier: MIT
+
+/.direnv/
+/result
