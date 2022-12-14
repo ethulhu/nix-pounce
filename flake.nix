@@ -17,7 +17,28 @@
       };
 
     in {
-      overlays.default = final: _prev: derivations final;
+      overlays.default = final: prev:
+        derivations final // {
+          formats = prev.formats // {
+            getopt = final.callPackage ./pkgs/formats-getopt.nix { };
+          };
+        };
+
+      nixosModules = {
+        litterbox = {
+          imports = [ ./modules/litterbox.nix ];
+          nixpkgs.overlays = [ self.overlays.default ];
+        };
+
+        pounce = {
+          imports = [ ./modules/pounce.nix ];
+          nixpkgs.overlays = [ self.overlays.default ];
+        };
+
+        default = {
+          imports = [ self.nixosModules.pounce self.nixosModules.litterbox ];
+        };
+      };
 
       packages =
         forAllSystems (system: derivations nixpkgs.legacyPackages.${system});
