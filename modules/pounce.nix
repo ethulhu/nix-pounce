@@ -5,13 +5,25 @@
 { config, pkgs, lib, ... }:
 let
   inherit (lib)
-    escapeShellArgs filterAttrs mapAttrs' mdDoc mkEnableOption mkIf mkOption;
-  inherit (lib.types) attrsOf listOf oneOf path port str submodule;
+    escapeShellArgs filterAttrs mapAttrs' mdDoc mkEnableOption mkIf mkMerge
+    mkOption optional;
+  inherit (lib.types) attrsOf int listOf nullOr oneOf path port str submodule;
   inherit (pkgs.formats) getopt;
 
   description = "Pounce IRC bouncer";
-  palaver.description = "Palaver push notifications for Pounce";
-  notify.description = "notifications for Pounce";
+  calico = {
+    description = "dispatches cat";
+    unitName = "pounce-calico";
+  };
+  notify = {
+    description = "notifications for Pounce";
+    suffix = "notify";
+  };
+  palaver = {
+    description = "Palaver push notifications for Pounce";
+    suffix = "palaver";
+  };
+
   cfg = config.services.pounce;
 
   settingsFormat = getopt { };
@@ -22,18 +34,19 @@ let
     let
       unit = unitName name;
 
-      # DynamicUser implies PrivateTmp.
       expandedConfig = "/tmp/${unit}.conf";
       unexpandedConfig = settingsFormat.generate "${unit}.conf" opts.settings;
     in {
       name = unit;
       value = {
         description = "${description} for ${name}";
+        after = [ "${calico.unitName}.service" "network.target" ];
+        requisite = [ "${calico.unitName}.service" ];
         wants = [ "network.target" ];
-        after = [ "network.target" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = rec {
-          DynamicUser = true;
+          User = cfg.user;
+          PrivateTmp = true;
           SupplementaryGroups = opts.extraGroups;
           ExecStartPre =
             "${pkgs.envsubst}/bin/envsubst -i ${unexpandedConfig} -o ${expandedConfig}";
@@ -43,21 +56,24 @@ let
           EnvironmentFile = opts.environmentFiles;
           Restart = "always";
           RestartSec = opts.reconnectDelay;
+          RestartPreventExitStatus = [
+            73 # CANTCREAT
+          ];
         };
       };
     };
 
-  botService = { name, opts, description, suffix, ExecStart }:
+  botService = { name, opts, meta, ExecStart }:
     let
       pounce = unitName name;
-      unit = "${pounce}-${suffix}";
+      unit = "${pounce}-${meta.suffix}";
     in {
       name = unit;
       value = {
-        description = "${description} for ${name}";
+        description = "${meta.description} for ${name}";
         wants = [ "network.target" ];
         after = [ "${pounce}.service" "network.target" ];
-        requires = [ "${pounce}.service" ];
+        requisite = [ "${pounce}.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = rec {
           inherit ExecStart;
@@ -78,8 +94,7 @@ let
   notifyService = name: opts:
     botService {
       inherit name opts;
-      inherit (notify) description;
-      suffix = "notify";
+      meta = notify;
       ExecStart =
         "${pkgs.pounce}/bin/pounce-notify -p ${toString opts.notify.port} ${
           escapeShellArgs opts.notify.extraFlags
@@ -89,8 +104,7 @@ let
   palaverService = name: opts:
     botService {
       inherit name opts;
-      inherit (palaver) description;
-      suffix = "palaver";
+      meta = palaver;
       ExecStart =
         "${pkgs.pounce}/bin/pounce-palaver -p ${toString opts.palaver.port} ${
           escapeShellArgs opts.palaver.extraFlags
@@ -100,6 +114,54 @@ let
 in {
   options.services.pounce = {
     enable = mkEnableOption description;
+
+    user = mkOption {
+      type = str;
+      default = "pounce";
+      description = ''
+        The user to run Calico and Pounce instances under.
+        Notify & Palaver bots do not use this, and run under DynamicUser.
+      '';
+    };
+
+    group = mkOption {
+      type = str;
+      default = "pounce";
+      description = ''
+        The group to run Calico and Pounce instances under.
+        Notify & Palaver bots do not use this, and run under DynamicUser.
+      '';
+    };
+
+    calico = {
+      enable = mkEnableOption calico.description;
+
+      port = mkOption {
+        type = port;
+        default = 6697;
+        description = "Port to bind to.";
+      };
+
+      host = mkOption {
+        type = str;
+        description = "Hostname to dispatch.";
+        example = "irc.jimothy.horse";
+      };
+
+      timeoutMilliseconds = mkOption {
+        type = int;
+        default = 1000;
+        description =
+          "The timeout after which a connection will be closed if it has not sent the ClientHello message.";
+      };
+
+      socketsDirectory = mkOption {
+        type = path;
+        default = "/run/${calico.unitName}";
+        readOnly = true;
+        description = "The directory containing Pounce sockets.";
+      };
+    };
 
     networks = mkOption {
       type = attrsOf (submodule ({ config, ... }: {
@@ -136,9 +198,21 @@ in {
             type = submodule {
               freeformType = settingsFormat.type;
               options.local-port = mkOption {
-                type = port;
-                default = 6697;
-                description = "Port to bind to.";
+                type = nullOr port;
+                default = if cfg.calico.enable then null else 6697;
+                description =
+                  "Port to bind to. Disabled by default if Calico is enabled.";
+              };
+              options.local-path = mkOption {
+                type = nullOr path;
+                default = if cfg.calico.enable then
+                  cfg.calico.socketsDirectory
+                else
+                  null;
+                description = mdDoc ''
+                  Path to sockets directory for `calico(1)`.
+                  Disabled by default if Calico is not enabled.
+                '';
               };
             };
             description = mdDoc ''
@@ -159,12 +233,16 @@ in {
             enable = mkEnableOption notify.description;
             host = mkOption {
               type = str;
+              default = config.settings.local-host;
               description = "Host of the Pounce instance.";
               example = "irc.jimothy.horse";
             };
             port = mkOption {
               type = port;
-              default = config.settings.local-port;
+              default = if cfg.calico.enable then
+                cfg.calico.port
+              else
+                config.settings.local-port;
               description = "Port of the Pounce instance.";
             };
             command = mkOption {
@@ -183,12 +261,16 @@ in {
             enable = mkEnableOption palaver.description;
             host = mkOption {
               type = str;
+              default = config.settings.local-host;
               description = "Host of the Pounce instance.";
               example = "irc.jimothy.horse";
             };
             port = mkOption {
               type = port;
-              default = config.settings.local-port;
+              default = if cfg.calico.enable then
+                cfg.calico.port
+              else
+                config.settings.local-port;
               description = "Port of the Pounce instance.";
             };
             extraFlags = mkOption {
@@ -216,7 +298,33 @@ in {
       (filterAttrs (_name: opts: opts.enable && opts.notify.enable)
         cfg.networks);
 
-  in mkIf cfg.enable {
-    systemd.services = networkServices // notifyServices // palaverServices;
-  };
+  in mkMerge [
+    (mkIf cfg.enable {
+      users.users.${cfg.user} = {
+        inherit (cfg) group;
+        isSystemUser = true;
+      };
+      users.groups.${cfg.group} = { };
+
+      systemd.services = networkServices // notifyServices // palaverServices;
+    })
+    (mkIf (cfg.enable && cfg.calico.enable) {
+      systemd.services.${calico.unitName} = {
+        inherit (calico) description;
+        wants = [ "network.target" ];
+        after = [ "network.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          User = cfg.user;
+          PrivateTmp = true;
+          ExecStart = "${pkgs.pounce}/bin/calico -H ${cfg.calico.host} -P ${
+              toString cfg.calico.port
+            } -t ${
+              toString cfg.calico.timeoutMilliseconds
+            } ${cfg.calico.socketsDirectory}";
+          RuntimeDirectory = calico.unitName;
+        };
+      };
+    })
+  ];
 }

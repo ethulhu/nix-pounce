@@ -13,12 +13,13 @@ let
     let
       formatKV = key: value:
         {
-          bool = if value then key else "";
+          bool = if value then key else null;
           int = "${key} = ${toString value}";
-          string = if value != "" then "${key} = ${value}" else "";
+          null = null;
+          string = if value != "" then "${key} = ${value}" else null;
         }.${typeOf value};
     in concatStringsSep "\n"
-    (filter (line: line != "") (mapAttrsToList formatKV settings));
+    (filter (line: line != null) (mapAttrsToList formatKV settings));
 
 in { }: {
   type = attrsOf (oneOf [ bool int str ]);
