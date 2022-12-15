@@ -47,25 +47,21 @@ let
       };
     };
 
-  notifyService = name: opts:
+  botService = { name, opts, description, suffix, ExecStart }:
     let
-      pounceUnit = unitName name;
-      unit = "${pounceUnit}-notify";
-      opts' = opts.notify;
+      pounce = unitName name;
+      unit = "${pounce}-${suffix}";
     in {
       name = unit;
       value = {
-        description = "${notify.description} for ${name}";
+        description = "${description} for ${name}";
         wants = [ "network.target" ];
-        after = [ "${pounceUnit}.service" "network.target" ];
-        requires = [ "${pounceUnit}.service" ];
+        after = [ "${pounce}.service" "network.target" ];
+        requires = [ "${pounce}.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = rec {
+          inherit ExecStart;
           DynamicUser = true;
-          ExecStart =
-            "${pkgs.pounce}/bin/pounce-notify -p ${toString opts'.port} ${
-              escapeShellArgs opts'.extraFlags
-            } ${opts'.host} ${opts'.command}";
           StateDirectory = unit;
           Environment = [ "HOME=/var/lib/${StateDirectory}" ];
           EnvironmentFile = opts.environmentFiles;
@@ -79,36 +75,26 @@ let
       };
     };
 
-  palaverService = name: opts:
-    let
-      pounceUnit = unitName name;
-      unit = "${pounceUnit}-palaver";
-      opts' = opts.palaver;
-    in {
-      name = unit;
-      value = {
-        description = "${palaver.description} for ${name}";
-        wants = [ "network.target" ];
-        after = [ "${pounceUnit}.service" "network.target" ];
-        requires = [ "${pounceUnit}.service" ];
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = rec {
-          DynamicUser = true;
-          ExecStart =
-            "${pkgs.pounce}/bin/pounce-palaver -p ${toString opts'.port} ${
-              escapeShellArgs opts'.extraFlags
-            } ${opts'.host}";
-          StateDirectory = unit;
-          Environment = [ "HOME=/var/lib/${StateDirectory}" ];
-          EnvironmentFile = opts.environmentFiles;
-          Restart = "always";
-        };
-        preStart = ''
-          set -eu
+  notifyService = name: opts:
+    botService {
+      inherit name opts;
+      inherit (notify) description;
+      suffix = "notify";
+      ExecStart =
+        "${pkgs.pounce}/bin/pounce-notify -p ${toString opts.notify.port} ${
+          escapeShellArgs opts.notify.extraFlags
+        } ${opts.notify.host} ${opts.notify.command}";
+    };
 
-          mkdir -p $HOME/.local/share/pounce/
-        '';
-      };
+  palaverService = name: opts:
+    botService {
+      inherit name opts;
+      inherit (palaver) description;
+      suffix = "palaver";
+      ExecStart =
+        "${pkgs.pounce}/bin/pounce-palaver -p ${toString opts.palaver.port} ${
+          escapeShellArgs opts.palaver.extraFlags
+        } ${opts.palaver.host}";
     };
 
 in {
