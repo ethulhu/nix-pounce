@@ -23,6 +23,5 @@ stdenv.mkDerivation rec {
     homepage = "https://code.causal.agency/june/litterbox";
     description = "IRC logger";
     license = licenses.gpl3;
-    platforms = platforms.linux;
   };
 }
