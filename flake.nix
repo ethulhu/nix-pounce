@@ -14,6 +14,7 @@
 
       derivations = pkgs: {
         litterbox = pkgs.callPackage ./pkgs/litterbox { };
+        pounce = pkgs.callPackage ./pkgs/pounce { };
       };
 
     in {
