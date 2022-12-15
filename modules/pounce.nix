@@ -36,6 +36,8 @@ let
           StateDirectory = unit;
           Environment = [ "HOME=/var/lib/${StateDirectory}" ];
           EnvironmentFile = opts.environmentFiles;
+          Restart = "always";
+          RestartSec = opts.reconnectDelay;
         };
       };
     };
@@ -64,6 +66,15 @@ in {
             example = [ "/root/pounce-password.env" ];
             description =
               "Files to load systemd Unit environment variables from.";
+          };
+
+          reconnectDelay = mkOption rec {
+            type = str;
+            default = "260 seconds";
+            description = mdDoc ''
+              How long to wait before restarting after disconnect, as a `systemd.time(5)` span.
+              The default (${default}) is appropriate for most networks' timeouts.
+            '';
           };
 
           settings = mkOption {

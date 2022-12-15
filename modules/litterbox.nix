@@ -32,6 +32,8 @@ let
             "${pkgs.envsubst}/bin/envsubst -i ${unexpandedConfig} -o ${expandedConfig}";
           ExecStart = "${pkgs.litterbox}/bin/litterbox ${expandedConfig}";
           EnvironmentFile = opts.environmentFiles;
+          Restart = "always";
+          RestartSec = opts.reconnectDelay;
         };
       };
     };
@@ -80,6 +82,14 @@ in {
             example = [ "/root/pounce-password.env" ];
             description =
               "Files to load systemd Unit environment variables from.";
+          };
+
+          reconnectDelay = mkOption rec {
+            type = str;
+            default = "120 seconds";
+            description = mdDoc ''
+              How long to wait before restarting after disconnect, as a `systemd.time(5)` span.
+            '';
           };
 
           settings = mkOption {
