@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: MIT
 
-{ fetchzip, lib, libressl, pkgconfig, sqlite, stdenv }:
+{ fetchzip, lib, libressl, pkg-config, sqlite, stdenv }:
 stdenv.mkDerivation rec {
   pname = "litterbox";
   version = "1.8";
@@ -15,7 +15,7 @@ stdenv.mkDerivation rec {
 
   buildInputs = [ libressl sqlite ];
 
-  nativeBuildInputs = [ pkgconfig ];
+  nativeBuildInputs = [ pkg-config ];
 
   buildFlags = [ "all" ];
 
